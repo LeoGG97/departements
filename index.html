@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carte des départements visités</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f4f0; color: #1a1a18; min-height: 100vh; padding: 24px 16px;
+    }
+    #app { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 20px; font-weight: 500; color: #1a1a18; }
+
+    /* Sync status */
+    #sync-bar {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #888; min-height: 20px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+    .dot.ok { background: #1D9E75; }
+    .dot.err { background: #e74c3c; }
+    .dot.syncing { background: #f39c12; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* User bar */
+    #userbar {
+      background: #fff; border: 0.5px solid rgba(0,0,0,0.1);
+      border-radius: 10px; padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    #userbar label { font-size: 13px; color: #6b6b68; white-space: nowrap; }
+    #user-select {
+      flex: 1; min-width: 120px; max-width: 200px;
+      padding: 6px 10px; font-size: 13px;
+      border: 0.5px solid rgba(0,0,0,0.2); border-radius: 7px;
+      background: #f9f9f7; color: #1a1a18; cursor: pointer;
+    }
+    #user-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      padding: 6px 13px; font-size: 12px; cursor: pointer;
+      background: transparent; border: 0.5px solid rgba(0,0,0,0.22);
+      border-radius: 7px; color: #444; white-space: nowrap;
+    }
+    .btn:hover { background: #eeeee9; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary { background: #1D9E75; color: #fff; border-color: #1D9E75; }
+    .btn-primary:hover { background: #178a64; }
+    .btn-danger { color: #c0392b; border-color: rgba(192,57,43,0.35); }
+    .btn-danger:hover { background: #fdf0ee; }
+
+    /* Stats */
+    #stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .sc {
+      background: #fff; border-radius: 8px;
+      border: 0.5px solid rgba(0,0,0,0.1);
+      padding: 10px 16px; flex: 1; min-width: 100px;
+    }
+    .sl { font-size: 12px; color: #6b6b68; margin-bottom: 2px; }
+    .sv { font-size: 22px; font-weight: 500; color: #1a1a18; }
+
+    /* Legend */
+    #legend { display: flex; gap: 14px; align-items: center; font-size: 12px; color: #6b6b68; flex-wrap: wrap; }
+    .li { display: flex; align-items: center; gap: 6px; }
+    .ld { width: 13px; height: 13px; border-radius: 3px; }
+
+    /* Map */
+    #mapwrap { position: relative; width: 100%; }
+    #mapwrap svg { width: 100%; height: auto; display: block; }
+    .d { cursor: pointer; transition: fill 0.12s; }
+    .d:hover { opacity: 0.82; }
+    #tip {
+      position: absolute; background: #fff;
+      border: 0.5px solid rgba(0,0,0,0.12); border-radius: 8px;
+      padding: 8px 12px; font-size: 13px; pointer-events: none;
+      display: none; z-index: 20; min-width: 160px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    .tn { font-size: 10px; color: #6b6b68; }
+    .tm { font-weight: 500; color: #1a1a18; margin: 2px 0; }
+    .tc { font-size: 12px; color: #6b6b68; }
+    .th { font-size: 11px; color: #888; margin-top: 4px; border-top: 0.5px solid rgba(0,0,0,0.1); padding-top: 4px; }
+
+    /* Dept list */
+    #dlist {
+      background: #fff; border-radius: 8px;
+      border: 0.5px solid rgba(0,0,0,0.1); padding: 12px 14px;
+    }
+    #dlist h3 { font-size: 13px; font-weight: 500; color: #6b6b68; margin-bottom: 8px; }
+    #dlc { display: flex; flex-wrap: wrap; gap: 6px; max-height: 110px; overflow-y: auto; }
+    .dtag { background: #E1F5EE; color: #0F6E56; font-size: 11px; padding: 3px 9px; border-radius: 99px; }
+    .emp { font-size: 12px; color: #aaa; font-style: italic; }
+
+    /* Ranking */
+    #ranking {
+      background: #fff; border-radius: 10px;
+      border: 0.5px solid rgba(0,0,0,0.1); padding: 14px 16px;
+    }
+    #ranking-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    #ranking h2 { font-size: 15px; font-weight: 500; color: #1a1a18; }
+    #rank-list { display: flex; flex-direction: column; gap: 8px; }
+    .rank-row { display: flex; align-items: center; gap: 10px; }
+    .rank-pos { font-size: 13px; font-weight: 500; color: #aaa; width: 20px; text-align: right; flex-shrink: 0; }
+    .rank-name { font-size: 14px; font-weight: 500; color: #1a1a18; min-width: 90px; flex-shrink: 0; }
+    .rank-bar-wrap { flex: 1; background: #f0efeb; border-radius: 99px; height: 8px; overflow: hidden; }
+    .rank-bar { height: 8px; border-radius: 99px; background: #1D9E75; transition: width 0.3s; }
+    .rank-count { font-size: 12px; color: #6b6b68; width: 50px; text-align: right; flex-shrink: 0; }
+    .rank-row.me .rank-name { color: #0F6E56; }
+    .rank-row.me .rank-bar { background: #0F6E56; }
+    .rank-empty { font-size: 13px; color: #aaa; font-style: italic; }
+
+    /* Loading overlay */
+    #loading {
+      position: fixed; inset: 0; background: #f5f4f0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; z-index: 200;
+    }
+    #loading.hidden { display: none; }
+    #loading p { font-size: 14px; color: #6b6b68; }
+    .spinner {
+      width: 32px; height: 32px; border: 3px solid #e0e0da;
+      border-top-color: #1D9E75; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Modal */
+    #modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: #fff; border-radius: 12px; padding: 24px 28px;
+      width: min(360px, 90vw); box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    }
+    #modal h2 { font-size: 16px; font-weight: 500; margin-bottom: 6px; }
+    #modal p { font-size: 13px; color: #888; margin-bottom: 14px; }
+    #modal input[type="text"] {
+      width: 100%; padding: 8px 12px; font-size: 14px;
+      border: 0.5px solid rgba(0,0,0,0.25); border-radius: 7px;
+      background: #f9f9f7; color: #1a1a18; margin-bottom: 14px;
+    }
+    #modal input:focus { outline: 2px solid #1D9E75; outline-offset: 1px; }
+    #modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+    footer { text-align: center; font-size: 11px; color: #aaa; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Chargement des données…</p>
+</div>
+
+<div id="app">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <h1>Départements visités</h1>
+    <div id="sync-bar"><div class="dot" id="sync-dot"></div><span id="sync-msg">Connexion…</span></div>
+  </div>
+
+  <div id="userbar">
+    <label for="user-select">Profil :</label>
+    <select id="user-select"></select>
+    <div id="user-actions">
+      <button class="btn btn-primary" id="btn-add-user">+ Ajouter mon profil</button>
+      <button class="btn btn-danger" id="btn-del-user">Supprimer</button>
+    </div>
+  </div>
+
+  <div id="stats">
+    <div class="sc"><div class="sl">Visités</div><div class="sv" id="cv">0</div></div>
+    <div class="sc"><div class="sl">Total</div><div class="sv">101</div></div>
+    <div class="sc"><div class="sl">Couverture</div><div class="sv" id="cp">0%</div></div>
+  </div>
+
+  <div id="legend">
+    <div class="li"><div class="ld" style="background:#B4B2A9"></div>Non visité</div>
+    <div class="li"><div class="ld" style="background:#1D9E75"></div>Visité</div>
+    <button class="btn" id="rst" style="margin-left:auto">Réinitialiser ma carte</button>
+  </div>
+
+  <div id="mapwrap">
+    <div id="tip"></div>
+    <svg id="map" viewBox="0 0 560 520" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div id="dlist">
+    <h3 id="dlist-title">Mes départements visités</h3>
+    <div id="dlc"><span class="emp">Cliquez sur un département pour le marquer comme visité</span></div>
+  </div>
+
+  <div id="ranking">
+    <div id="ranking-header">
+      <h2>🏆 Classement</h2>
+      <button class="btn" id="btn-refresh">↻ Actualiser</button>
+    </div>
+    <div id="rank-list"><span class="rank-empty">Chargement…</span></div>
+  </div>
+
+  <footer>Données synchronisées en ligne · Partagez cette page à vos amis !</footer>
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2>Créer mon profil</h2>
+    <p>Choisissez un prénom ou pseudo visible par tous.</p>
+    <input type="text" id="modal-input" placeholder="Votre prénom ou pseudo" maxlength="30" autocomplete="off">
+    <div id="modal-actions">
+      <button class="btn" id="modal-cancel">Annuler</button>
+      <button class="btn btn-primary" id="modal-confirm">Créer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════
+   CONFIG JSONBIN
+══════════════════════════════════════════ */
+const BIN_ID  = "6a2ff8fcda38895dfec3b06a";
+const API_KEY = "$2a$10$T2Til0lB.uxbzxivx1kyressaPFvCxwoCExhXYdjHqq6edOf9r7Vy";
+const BASE    = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+/* ══════════════════════════════════════════
+   DONNÉES GÉO
+══════════════════════════════════════════ */
+const META={"01":["Ain","Bourg-en-Bresse"],"02":["Aisne","Laon"],"03":["Allier","Moulins"],"04":["Alpes-de-Haute-Provence","Digne-les-Bains"],"05":["Hautes-Alpes","Gap"],"06":["Alpes-Maritimes","Nice"],"07":["Ardèche","Privas"],"08":["Ardennes","Charleville-Mézières"],"09":["Ariège","Foix"],"10":["Aube","Troyes"],"11":["Aude","Carcassonne"],"12":["Aveyron","Rodez"],"13":["Bouches-du-Rhône","Marseille"],"14":["Calvados","Caen"],"15":["Cantal","Aurillac"],"16":["Charente","Angoulême"],"17":["Charente-Maritime","La Rochelle"],"18":["Cher","Bourges"],"19":["Corrèze","Tulle"],"2A":["Corse-du-Sud","Ajaccio"],"2B":["Haute-Corse","Bastia"],"21":["Côte-d'Or","Dijon"],"22":["Côtes-d'Armor","Saint-Brieuc"],"23":["Creuse","Guéret"],"24":["Dordogne","Périgueux"],"25":["Doubs","Besançon"],"26":["Drôme","Valence"],"27":["Eure","Évreux"],"28":["Eure-et-Loir","Chartres"],"29":["Finistère","Quimper"],"30":["Gard","Nîmes"],"31":["Haute-Garonne","Toulouse"],"32":["Gers","Auch"],"33":["Gironde","Bordeaux"],"34":["Hérault","Montpellier"],"35":["Ille-et-Vilaine","Rennes"],"36":["Indre","Châteauroux"],"37":["Indre-et-Loire","Tours"],"38":["Isère","Grenoble"],"39":["Jura","Lons-le-Saunier"],"40":["Landes","Mont-de-Marsan"],"41":["Loir-et-Cher","Blois"],"42":["Loire","Saint-Étienne"],"43":["Haute-Loire","Le Puy-en-Velay"],"44":["Loire-Atlantique","Nantes"],"45":["Loiret","Orléans"],"46":["Lot","Cahors"],"47":["Lot-et-Garonne","Agen"],"48":["Lozère","Mende"],"49":["Maine-et-Loire","Angers"],"50":["Manche","Saint-Lô"],"51":["Marne","Châlons-en-Champagne"],"52":["Haute-Marne","Chaumont"],"53":["Mayenne","Laval"],"54":["Meurthe-et-Moselle","Nancy"],"55":["Meuse","Bar-le-Duc"],"56":["Morbihan","Vannes"],"57":["Moselle","Metz"],"58":["Nièvre","Nevers"],"59":["Nord","Lille"],"60":["Oise","Beauvais"],"61":["Orne","Alençon"],"62":["Pas-de-Calais","Arras"],"63":["Puy-de-Dôme","Clermont-Ferrand"],"64":["Pyrénées-Atlantiques","Pau"],"65":["Hautes-Pyrénées","Tarbes"],"66":["Pyrénées-Orientales","Perpignan"],"67":["Bas-Rhin","Strasbourg"],"68":["Haut-Rhin","Colmar"],"69":["Rhône","Lyon"],"70":["Haute-Saône","Vesoul"],"71":["Saône-et-Loire","Mâcon"],"72":["Sarthe","Le Mans"],"73":["Savoie","Chambéry"],"74":["Haute-Savoie","Annecy"],"75":["Paris","Paris"],"76":["Seine-Maritime","Rouen"],"77":["Seine-et-Marne","Melun"],"78":["Yvelines","Versailles"],"79":["Deux-Sèvres","Niort"],"80":["Somme","Amiens"],"81":["Tarn","Albi"],"82":["Tarn-et-Garonne","Montauban"],"83":["Var","Toulon"],"84":["Vaucluse","Avignon"],"85":["Vendée","La Roche-sur-Yon"],"86":["Vienne","Poitiers"],"87":["Haute-Vienne","Limoges"],"88":["Vosges","Épinal"],"89":["Yonne","Auxerre"],"90":["Territoire de Belfort","Belfort"],"91":["Essonne","Évry-Courcouronnes"],"92":["Hauts-de-Seine","Nanterre"],"93":["Seine-Saint-Denis","Bobigny"],"94":["Val-de-Marne","Créteil"],"95":["Val-d'Oise","Cergy"],"971":["Guadeloupe","Basse-Terre"],"972":["Martinique","Fort-de-France"],"973":["Guyane","Cayenne"],"974":["La Réunion","Saint-Denis"],"976":["Mayotte","Mamoudzou"]};
+
+const HEXES={"01":[376.1,254.1],"02":[318.0,82.7],"03":[303.1,241.5],"04":[404.3,354.9],"05":[405.9,326.1],"06":[434.1,363.4],"07":[346.2,322.1],"08":[354.5,72.6],"09":[250.0,415.3],"10":[331.3,143.2],"11":[281.5,405.3],"12":[286.5,342.3],"13":[367.8,385.1],"14":[187.0,102.9],"15":[286.5,307.0],"16":[204.6,274.2],"17":[167.1,271.7],"18":[281.5,206.2],"19":[261.6,291.9],"2A":[497.1,467.2],"2B":[507.1,440.5],"21":[358.8,187.0],"22":[103.7,136.1],"23":[266.6,261.6],"24":[223.5,304.5],"25":[409.2,203.7],"26":[371.1,322.1],"27":[238.4,102.9],"28":[243.4,140.7],"29":[66.9,149.8],"30":[336.3,359.9],"31":[244.0,395.2],"32":[217.8,377.5],"33":[180.4,317.1],"34":[316.4,380.1],"35":[147.2,149.8],"36":[250.0,223.8],"37":[221.8,196.1],"38":[382.7,296.9],"39":[383.7,221.3],"40":[177.0,359.9],"41":[250.0,176.0],"42":[336.3,274.2],"43":[326.3,301.9],"44":[143.9,191.1],"45":[270.9,161.8],"46":[253.3,327.1],"47":[216.8,342.3],"48":[314.7,334.7],"49":[180.4,188.6],"50":[155.5,102.9],"51":[337.9,110.4],"52":[374.4,153.3],"53":[177.0,155.8],"54":[404.3,123.0],"55":[376.1,105.4],"56":[104.1,165.9],"57":[417.5,105.4],"58":[319.7,203.7],"59":[304.7,37.4],"60":[279.9,87.8],"61":[201.2,130.6],"62":[279.9,32.3],"63":[301.4,276.7],"64":[173.7,395.2],"65":[204.6,407.8],"66":[281.5,427.9],"67":[449.0,125.6],"68":[442.4,165.9],"69":[351.2,271.7],"70":[400.9,176.0],"71":[352.8,226.4],"72":[201.9,158.3],"73":[410.9,286.8],"74":[412.6,259.1],"75":[470,195],"76":[231.8,75.2],"77":[495,210],"78":[440,198],"79":[187.0,231.4],"80":[274.9,62.6],"81":[276.6,367.5],"82":[243.4,354.9],"83":[409.2,387.6],"84":[369.4,357.4],"85":[153.8,226.4],"86":[213.5,231.4],"87":[240.7,266.7],"88":[414.2,150.8],"89":[318.0,165.9],"90":[425.8,177.0],"91":[458,228],"92":[450,210],"93":[480,210],"94":[475,225],"95":[458,181]};
+
+const DROM=[["971",30,490,"Guadeloupe"],["972",90,490,"Martinique"],["973",150,490,"Guyane"],["974",210,490,"Réunion"],["976",270,490,"Mayotte"]];
+
+const C0="#B4B2A9", CV="#1D9E75", R=13;
+const LS_KEY = "dept_current_profile";
+
+/* ══════════════════════════════════════════
+   STATE
+══════════════════════════════════════════ */
+let profiles = {};      // { id: { name, visited:[] } }
+let currentId = null;
+let visited = new Set();
+let isSaving = false;
+
+/* ══════════════════════════════════════════
+   JSONBIN API
+══════════════════════════════════════════ */
+function syncStatus(state, msg) {
+  const dot = document.getElementById("sync-dot");
+  const txt = document.getElementById("sync-msg");
+  dot.className = "dot " + state;
+  txt.textContent = msg;
+}
+
+async function fetchData() {
+  const r = await fetch(BASE + "/latest", {
+    headers: { "X-Master-Key": API_KEY, "X-Bin-Meta": "false" }
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const json = await r.json();
+  return json.profiles || {};
+}
+
+async function pushData() {
+  if (isSaving) return;
+  isSaving = true;
+  syncStatus("syncing", "Sauvegarde…");
+  try {
+    const r = await fetch(BASE, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": API_KEY
+      },
+      body: JSON.stringify({ profiles })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    syncStatus("ok", "Sauvegardé ✓");
+  } catch(e) {
+    syncStatus("err", "Erreur de sauvegarde");
+  } finally {
+    isSaving = false;
+  }
+}
+
+/* ══════════════════════════════════════════
+   SVG MAP
+══════════════════════════════════════════ */
+const svg = document.getElementById("map");
+const NS = "http://www.w3.org/2000/svg";
+function mkEl(tag, attrs) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k,v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+function hexPts(cx, cy, r) {
+  let p = [];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI/180*(60*i-30);
+    p.push(`${(cx+r*Math.cos(a)).toFixed(1)},${(cy+r*Math.sin(a)).toFixed(1)}`);
+  }
+  return p.join(" ");
+}
+
+function buildMap() {
+  svg.innerHTML = "";
+
+  for (const [code,[cx,cy]] of Object.entries(HEXES)) {
+    const g = document.createElementNS(NS,"g"); g.style.cursor="pointer";
+    const poly = mkEl("polygon",{"points":hexPts(cx,cy,R),"fill":visited.has(code)?CV:C0,"stroke":"white","stroke-width":"0.8","class":"d"});
+    poly.dataset.code = code;
+    const t = mkEl("text",{"x":cx,"y":cy+3.5,"text-anchor":"middle","font-size":"6.5","font-weight":"500","fill":"rgba(255,255,255,0.88)","pointer-events":"none"});
+    t.textContent = code;
+    g.appendChild(poly); g.appendChild(t);
+    g.addEventListener("mousemove", e => showTip(e, code));
+    g.addEventListener("mouseleave", hideTip);
+    g.addEventListener("click", () => toggle(code, poly));
+    svg.appendChild(g);
+  }
+
+  svg.appendChild(mkEl("rect",{"x":428,"y":168,"width":78,"height":72,"rx":"4","fill":"none","stroke":"rgba(0,0,0,0.15)","stroke-width":"0.5","stroke-dasharray":"3,2"}));
+  const iL = mkEl("text",{"x":467,"y":163,"text-anchor":"middle","font-size":"8","fill":"#888"});
+  iL.textContent="Île-de-France"; svg.appendChild(iL);
+
+  const dL = mkEl("text",{"x":150,"y":474,"text-anchor":"middle","font-size":"8.5","fill":"#888"});
+  dL.textContent="DROM (hors échelle)"; svg.appendChild(dL);
+
+  for (const [code,cx,cy,name] of DROM) {
+    const g = document.createElementNS(NS,"g"); g.style.cursor="pointer";
+    const rect = mkEl("rect",{"x":cx-24,"y":cy-14,"width":48,"height":28,"rx":"4","fill":visited.has(code)?CV:C0,"stroke":"white","stroke-width":"0.6","class":"d"});
+    rect.dataset.code = code;
+    const t1 = mkEl("text",{"x":cx,"y":cy-1,"text-anchor":"middle","font-size":"8","font-weight":"500","fill":"rgba(255,255,255,0.9)","pointer-events":"none"});
+    t1.textContent = code;
+    const t2 = mkEl("text",{"x":cx,"y":cy+9,"text-anchor":"middle","font-size":"7","fill":"rgba(255,255,255,0.75)","pointer-events":"none"});
+    t2.textContent = name;
+    g.appendChild(rect); g.appendChild(t1); g.appendChild(t2);
+    g.addEventListener("mousemove", e => showTip(e, code));
+    g.addEventListener("mouseleave", hideTip);
+    g.addEventListener("click", () => toggle(code, rect));
+    svg.appendChild(g);
+  }
+}
+
+function refreshMap() {
+  document.querySelectorAll(".d").forEach(el => {
+    const code = el.dataset.code;
+    if (code) el.setAttribute("fill", visited.has(code) ? CV : C0);
+  });
+}
+
+/* ══════════════════════════════════════════
+   TOOLTIP
+══════════════════════════════════════════ */
+const tip = document.getElementById("tip");
+const wrap = document.getElementById("mapwrap");
+function showTip(e, code) {
+  const info = META[code]; if (!info) return;
+  const r = wrap.getBoundingClientRect();
+  tip.innerHTML = `<div class="tn">${code}</div><div class="tm">${info[0]}</div><div class="tc">Chef-lieu : ${info[1]}</div><div class="th">${visited.has(code)?"Cliquer pour retirer":"Cliquer pour marquer visité"}</div>`;
+  tip.style.display = "block";
+  let lx = e.clientX-r.left+14, ly = e.clientY-r.top-10;
+  if (lx+165 > r.width) lx = e.clientX-r.left-170;
+  tip.style.left = lx+"px"; tip.style.top = ly+"px";
+}
+function hideTip() { tip.style.display="none"; }
+
+/* ══════════════════════════════════════════
+   TOGGLE
+══════════════════════════════════════════ */
+function toggle(code, el) {
+  if (!currentId) { alert("Créez d'abord votre profil !"); return; }
+  if (visited.has(code)) { visited.delete(code); el.setAttribute("fill",C0); }
+  else { visited.add(code); el.setAttribute("fill",CV); }
+  profiles[currentId].visited = [...visited];
+  updateStats();
+  updateRanking();
+  debouncePush();
+}
+
+let pushTimer = null;
+function debouncePush() {
+  clearTimeout(pushTimer);
+  syncStatus("syncing","Sauvegarde…");
+  pushTimer = setTimeout(pushData, 1200);
+}
+
+/* ══════════════════════════════════════════
+   STATS + LISTE
+══════════════════════════════════════════ */
+function updateStats() {
+  const n = visited.size;
+  document.getElementById("cv").textContent = n;
+  document.getElementById("cp").textContent = Math.round(n/101*100)+"%";
+  const name = profiles[currentId]?.name || "moi";
+  document.getElementById("dlist-title").textContent = `Départements visités — ${name}`;
+  const dlc = document.getElementById("dlc");
+  if (!n) { dlc.innerHTML='<span class="emp">Cliquez sur un département pour le marquer comme visité</span>'; return; }
+  const sorted = [...visited].sort((a,b)=>{
+    const na=META[a]?META[a][0]:a, nb=META[b]?META[b][0]:b;
+    return na.localeCompare(nb,"fr");
+  });
+  dlc.innerHTML = sorted.map(c=>`<span class="dtag">${c} — ${META[c]?META[c][0]:c}</span>`).join("");
+}
+
+/* ══════════════════════════════════════════
+   CLASSEMENT
+══════════════════════════════════════════ */
+function updateRanking() {
+  const rl = document.getElementById("rank-list");
+  const ids = Object.keys(profiles);
+  if (!ids.length) { rl.innerHTML='<span class="rank-empty">Aucun profil pour l\'instant.</span>'; return; }
+  const rows = ids.map(id => ({
+    id, name: profiles[id].name,
+    count: (profiles[id].visited||[]).length
+  })).sort((a,b) => b.count - a.count);
+  const max = Math.max(...rows.map(r=>r.count), 1);
+  const medals = ["🥇","🥈","🥉"];
+  rl.innerHTML = rows.map((r,i) => `
+    <div class="rank-row${r.id===currentId?' me':''}">
+      <span class="rank-pos">${medals[i]||i+1}</span>
+      <span class="rank-name">${esc(r.name)}${r.id===currentId?' ★':''}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(r.count/max*100)}%"></div></div>
+      <span class="rank-count">${r.count} / 101</span>
+    </div>
+  `).join("");
+}
+
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+/* ══════════════════════════════════════════
+   SÉLECTEUR
+══════════════════════════════════════════ */
+function buildSelect() {
+  const sel = document.getElementById("user-select");
+  sel.innerHTML = "";
+  for (const [id, p] of Object.entries(profiles)) {
+    const opt = document.createElement("option");
+    opt.value = id; opt.textContent = p.name;
+    if (id === currentId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+document.getElementById("user-select").addEventListener("change", function() {
+  currentId = this.value;
+  localStorage.setItem(LS_KEY, currentId);
+  visited = new Set(profiles[currentId]?.visited || []);
+  refreshMap();
+  updateStats();
+  updateRanking();
+});
+
+/* ══════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════ */
+const overlay = document.getElementById("modal-overlay");
+const modalInput = document.getElementById("modal-input");
+function openModal() { modalInput.value=""; overlay.classList.add("open"); setTimeout(()=>modalInput.focus(),50); }
+function closeModal() { overlay.classList.remove("open"); }
+document.getElementById("btn-add-user").addEventListener("click", openModal);
+document.getElementById("modal-cancel").addEventListener("click", closeModal);
+overlay.addEventListener("click", e => { if(e.target===overlay) closeModal(); });
+modalInput.addEventListener("keydown", e => { if(e.key==="Enter") confirmAdd(); });
+document.getElementById("modal-confirm").addEventListener("click", confirmAdd);
+
+async function confirmAdd() {
+  const name = modalInput.value.trim();
+  if (!name) { modalInput.focus(); return; }
+  if (Object.values(profiles).some(p=>p.name.toLowerCase()===name.toLowerCase())) {
+    alert(`Un profil "${name}" existe déjà.`); modalInput.focus(); return;
+  }
+  const id = "u_" + Date.now();
+  profiles[id] = { name, visited: [] };
+  currentId = id;
+  localStorage.setItem(LS_KEY, id);
+  visited = new Set();
+  closeModal();
+  buildSelect();
+  refreshMap();
+  updateStats();
+  updateRanking();
+  await pushData();
+}
+
+/* ══════════════════════════════════════════
+   SUPPRIMER
+══════════════════════════════════════════ */
+document.getElementById("btn-del-user").addEventListener("click", async () => {
+  if (!currentId) return;
+  const name = profiles[currentId]?.name || "ce profil";
+  if (Object.keys(profiles).length <= 1) { alert("Impossible de supprimer le seul profil."); return; }
+  if (!confirm(`Supprimer le profil "${name}" ?`)) return;
+  delete profiles[currentId];
+  currentId = Object.keys(profiles)[0];
+  localStorage.setItem(LS_KEY, currentId);
+  visited = new Set(profiles[currentId]?.visited || []);
+  buildSelect();
+  refreshMap();
+  updateStats();
+  updateRanking();
+  await pushData();
+});
+
+/* ══════════════════════════════════════════
+   RESET
+══════════════════════════════════════════ */
+document.getElementById("rst").addEventListener("click", async () => {
+  if (!currentId) return;
+  const name = profiles[currentId]?.name || "ce profil";
+  if (!confirm(`Réinitialiser la carte de "${name}" ?`)) return;
+  visited.clear();
+  profiles[currentId].visited = [];
+  refreshMap();
+  updateStats();
+  updateRanking();
+  await pushData();
+});
+
+/* ══════════════════════════════════════════
+   ACTUALISER
+══════════════════════════════════════════ */
+document.getElementById("btn-refresh").addEventListener("click", async () => {
+  syncStatus("syncing","Actualisation…");
+  try {
+    profiles = await fetchData();
+    if (currentId && profiles[currentId]) {
+      visited = new Set(profiles[currentId].visited || []);
+    }
+    buildSelect();
+    refreshMap();
+    updateStats();
+    updateRanking();
+    syncStatus("ok","À jour ✓");
+  } catch(e) {
+    syncStatus("err","Erreur réseau");
+  }
+});
+
+/* ══════════════════════════════════════════
+   INIT
+══════════════════════════════════════════ */
+async function init() {
+  syncStatus("syncing","Connexion…");
+  try {
+    profiles = await fetchData();
+    syncStatus("ok","Connecté ✓");
+  } catch(e) {
+    syncStatus("err","Hors ligne");
+    profiles = {};
+  }
+
+  // Retrouver le profil précédent sur cet appareil
+  const saved = localStorage.getItem(LS_KEY);
+  if (saved && profiles[saved]) {
+    currentId = saved;
+  } else if (Object.keys(profiles).length > 0) {
+    currentId = Object.keys(profiles)[0];
+  } else {
+    currentId = null;
+  }
+
+  if (currentId) {
+    visited = new Set(profiles[currentId]?.visited || []);
+    localStorage.setItem(LS_KEY, currentId);
+  }
+
+  buildMap();
+  buildSelect();
+  updateStats();
+  updateRanking();
+  document.getElementById("loading").classList.add("hidden");
+
+  // Auto-refresh toutes les 30 secondes
+  setInterval(async () => {
+    try {
+      const fresh = await fetchData();
+      // Mettre à jour les autres profils sans écraser le profil courant en cours d'édition
+      for (const [id, p] of Object.entries(fresh)) {
+        if (id !== currentId) profiles[id] = p;
+      }
+      // Supprimer les profils effacés par d'autres
+      for (const id of Object.keys(profiles)) {
+        if (id !== currentId && !fresh[id]) delete profiles[id];
+      }
+      buildSelect();
+      updateRanking();
+      syncStatus("ok","À jour ✓");
+    } catch(e) {}
+  }, 30000);
+}
+
+init();
+</script>
+</body>
+</html>
